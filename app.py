@@ -1,316 +1,713 @@
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 from pathlib import Path
 
 st.set_page_config(
-    page_title="HortaSense | Apresentação do Projeto",
+    page_title="HortaSense",
     page_icon="🌱",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    layout="wide"
 )
 
-NAVY = "#12345A"
-BLUE = "#1769AA"
-CYAN = "#159BB5"
-GREEN = "#39856A"
-INK = "#243447"
-MUTED = "#627286"
-BG = "#F5F7FA"
+VERDE = "#16A34A"
+VERDE_ESCURO = "#14532D"
+CINZA = "#64748B"
+VERMELHO = "#DC2626"
 
-st.markdown(f"""
+st.markdown("""
 <style>
-:root {{
-  color-scheme: light;
-}}
-.stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {{
-  background: {BG} !important;
-  color: {INK} !important;
-}}
-[data-testid="stHeader"] {{ background: {BG} !important; }}
-[data-testid="stSidebar"] {{
-  background: {NAVY} !important;
-}}
-[data-testid="stSidebar"] * {{
-  color: #FFFFFF !important;
-}}
-[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {{
-  color: #E6EEF7 !important;
-}}
-.stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span,
-[data-testid="stWidgetLabel"], [data-testid="stCaptionContainer"] {{
-  color: {INK} !important;
-}}
-h1, h2, h3, h4 {{
-  color: {NAVY} !important;
-}}
-[data-testid="stMetric"] {{
-  background: #FFFFFF !important;
-  border: 1px solid #E1E7EF !important;
-  border-radius: 14px !important;
-  padding: 16px 18px !important;
-  box-shadow: 0 2px 8px rgba(18,52,90,.04);
-}}
-[data-testid="stMetricLabel"] p {{
-  color: {MUTED} !important;
-  font-weight: 600 !important;
-}}
-[data-testid="stMetricValue"] {{
-  color: {NAVY} !important;
-}}
-.hero {{
-  background: linear-gradient(115deg, {NAVY} 0%, {BLUE} 100%);
-  padding: 34px 38px;
-  border-radius: 18px;
-  color: white !important;
-  margin: 4px 0 24px 0;
-}}
-.hero h1 {{ color: #FFFFFF !important; margin: 0 0 8px 0; font-size: 2.2rem; }}
-.hero p {{ color: #EAF2FA !important; margin: 0; font-size: 1.05rem; }}
-.panel {{
-  background: #FFFFFF;
-  border: 1px solid #E1E7EF;
-  border-radius: 14px;
-  padding: 20px 22px;
-}}
-.step {{
-  background: #FFFFFF;
-  border-left: 4px solid {CYAN};
-  border-radius: 10px;
-  padding: 15px 18px;
-  margin-bottom: 10px;
-}}
-div[data-testid="stAlert"] p {{ color: {INK} !important; }}
-.stDataFrame {{ background: #FFFFFF; }}
-small, .small-note {{ color: {MUTED} !important; }}
+.stApp {
+    background-color: #F4F7F5;
+}
+
+[data-testid="stHeader"] {
+    background-color: #F4F7F5;
+}
+
+[data-testid="stMetric"] {
+    background-color: #FFFFFF;
+    border: 1px solid #DCE5DF;
+    border-radius: 14px;
+    padding: 18px;
+}
+
+[data-testid="stMetricValue"] {
+    color: #14532D;
+}
+
+.hero {
+    background: linear-gradient(120deg, #14532D, #15803D);
+    padding: 30px;
+    border-radius: 16px;
+    margin-bottom: 25px;
+}
+
+.hero h1 {
+    color: white;
+    margin: 0;
+}
+
+.hero p {
+    color: #DCFCE7;
+    margin-top: 8px;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
+
+# Carregamento e tratamento dos dados
+
 @st.cache_data
-def load_data():
-    path = Path(__file__).parent / "base_hortinha.csv"
-    data = pd.read_csv(path, sep=None, engine="python", encoding="utf-8-sig")
-    data.columns = [str(c).replace("\\ufeff", "").strip() for c in data.columns]
-    required = ["data_hora", "umidade_percentual", "valor_adc",
-                "tempo_bomba_segundos", "estado_bomba"]
-    missing = [c for c in required if c not in data.columns]
-    if missing:
-        raise ValueError("Colunas não encontradas: " + ", ".join(missing))
-    data["data_hora"] = pd.to_datetime(data["data_hora"], dayfirst=True, errors="coerce")
-    for col in ["umidade_percentual", "tempo_bomba_segundos"]:
-        data[col] = pd.to_numeric(
-            data[col].astype(str).str.replace(",", ".", regex=False), errors="coerce"
-        )
-    data["valor_adc"] = pd.to_numeric(data["valor_adc"], errors="coerce")
-    data["estado_bomba"] = data["estado_bomba"].astype(str).str.strip().str.capitalize()
-    data = data.dropna(subset=["data_hora", "umidade_percentual", "valor_adc"]).copy()
-    data["dia"] = data["data_hora"].dt.date
-    data["bomba_ligada"] = data["estado_bomba"].eq("Ligada")
-    return data.sort_values("data_hora")
+def carregar_dados():
+    caminho = Path(__file__).parent / "base_hortinha.csv"
 
-try:
-    df = load_data()
-except Exception as e:
-    st.error(f"Erro ao abrir a base de dados: {e}")
-    st.stop()
-
-periodo_inicio, periodo_fim = df.data_hora.min(), df.data_hora.max()
-total = len(df)
-media = df.umidade_percentual.mean()
-mediana = df.umidade_percentual.median()
-acionamentos = int(df.bomba_ligada.sum())
-tempo_bomba = df.tempo_bomba_segundos.sum()
-correlacao = df.valor_adc.corr(df.umidade_percentual)
-
-pagina = st.sidebar.radio(
-    "APRESENTAÇÃO",
-    ["Visão geral", "O projeto", "Coleta de dados", "Banco de dados",
-     "Análise dos resultados", "Conclusões"]
-)
-st.sidebar.markdown("---")
-st.sidebar.markdown("**HortaSense**")
-st.sidebar.caption("Projeto Integrador · HMDC680")
-st.sidebar.caption("Ciência de Dados e Inteligência Artificial")
-st.sidebar.caption("IESB · 2026")
-
-def cabecalho(titulo, subtitulo):
-    st.markdown(f'<div class="hero"><h1>{titulo}</h1><p>{subtitulo}</p></div>',
-                unsafe_allow_html=True)
-
-def grafico_layout(fig, altura=360):
-    fig.update_layout(
-        height=altura, margin=dict(l=12, r=12, t=28, b=12),
-        paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
-        font=dict(color=INK, family="Arial"),
-        title_font=dict(color=NAVY),
+    df = pd.read_csv(
+        caminho,
+        sep=";",
+        encoding="utf-8-sig",
+        decimal=","
     )
-    fig.update_xaxes(gridcolor="#E9EEF4", zerolinecolor="#E9EEF4")
-    fig.update_yaxes(gridcolor="#E9EEF4", zerolinecolor="#E9EEF4")
+
+    df.columns = df.columns.str.strip()
+
+    df["data_hora"] = pd.to_datetime(
+        df["data_hora"],
+        dayfirst=True,
+        errors="coerce"
+    )
+
+    for coluna in [
+        "umidade_percentual",
+        "valor_adc",
+        "tempo_bomba_segundos"
+    ]:
+        df[coluna] = pd.to_numeric(
+            df[coluna].astype(str).str.replace(",", "."),
+            errors="coerce"
+        )
+
+    df["estado_bomba"] = (
+        df["estado_bomba"]
+        .astype(str)
+        .str.strip()
+        .str.capitalize()
+    )
+
+    df = df.dropna(
+        subset=["data_hora", "umidade_percentual", "valor_adc"]
+    )
+
+    df = df.sort_values("data_hora")
+
+    df["dia"] = df["data_hora"].dt.date
+
+    return df
+
+
+df = carregar_dados()
+
+
+# Padronização dos gráficos
+
+def configurar_grafico(fig, altura=380):
+    fig.update_layout(
+        template="plotly_white",
+        height=altura,
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#FFFFFF",
+        font=dict(
+            color="#243447",
+            family="Arial",
+            size=13
+        ),
+        margin=dict(l=20, r=20, t=40, b=20),
+        legend_title_text=""
+    )
+
+    fig.update_xaxes(gridcolor="#EDF2EF")
+    fig.update_yaxes(gridcolor="#EDF2EF")
+
     return fig
 
+
+# Cabeçalho
+
+def cabecalho(titulo, subtitulo):
+    st.markdown(
+        f"""
+        <div class="hero">
+            <h1>{titulo}</h1>
+            <p>{subtitulo}</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+# Menu lateral
+
+st.sidebar.title("🌱 HortaSense")
+
+st.sidebar.caption(
+    "Monitoramento inteligente de hortas"
+)
+
+pagina = st.sidebar.radio(
+    "Navegação",
+    [
+        "Visão geral",
+        "O projeto",
+        "Coleta de dados",
+        "Banco de dados",
+        "Análise dos resultados",
+        "Conclusões"
+    ]
+)
+
+st.sidebar.divider()
+
+st.sidebar.markdown("### Projeto Integrador")
+
+st.sidebar.write("Ciência de Dados e Inteligência Artificial")
+st.sidebar.write("IESB | 2026")
+
+st.sidebar.divider()
+
+
+# Filtro de período
+
+st.sidebar.markdown("### Filtros")
+
+periodo = st.sidebar.date_input(
+    "Período de análise",
+    value=(df["dia"].min(), df["dia"].max()),
+    min_value=df["dia"].min(),
+    max_value=df["dia"].max(),
+    format="DD/MM/YYYY"
+)
+
+if len(periodo) != 2:
+    st.info("Selecione a data inicial e a data final.")
+    st.stop()
+
+dados = df[
+    (df["dia"] >= periodo[0]) &
+    (df["dia"] <= periodo[1])
+].copy()
+
+if dados.empty:
+    st.info("Não existem registros nesse período.")
+    st.stop()
+
+
+# Indicadores
+
+total = len(dados)
+
+media = dados["umidade_percentual"].mean()
+
+mediana = dados["umidade_percentual"].median()
+
+acionamentos = int(
+    (dados["estado_bomba"] == "Ligada").sum()
+)
+
+tempo_total = dados["tempo_bomba_segundos"].sum()
+
+correlacao = dados["valor_adc"].corr(
+    dados["umidade_percentual"]
+)
+
+
+# PÁGINA 1 — VISÃO GERAL
+
 if pagina == "Visão geral":
-    cabecalho("HortaSense 🌱", "Sistema IoT para monitoramento e irrigação automatizada de horta doméstica")
-    st.write("Um protótipo que monitora a umidade do solo e aciona a irrigação automaticamente quando necessário.")
+
+    cabecalho(
+        "HortaSense 🌱",
+        "Sistema IoT para monitoramento e irrigação "
+        "automatizada de horta doméstica"
+    )
+
     a, b, c, d = st.columns(4)
-    a.metric("Leituras coletadas", f"{total}")
-    b.metric("Umidade média", f"{media:.1f}%".replace(".", ","))
-    c.metric("Ciclos de irrigação", "26")
-    d.metric("Investimento realizado", "R$ 248,30")
-    st.subheader("Como o sistema funciona")
-    x, y = st.columns([1.1, 1])
-    with x:
-        st.markdown("""
-        **Monitoramento**  
-        Um sensor capacitivo mede a umidade do solo e envia a leitura ao ESP32.
 
-        **Automação**  
-        Quando a umidade fica abaixo de 40%, o ESP32 aciona o relé e liga a bomba por 2 segundos.
+    a.metric("Registros coletados", total)
 
-        **Registro e análise**  
-        As leituras são salvas em CSV no cartão micro SD, importadas para PostgreSQL e analisadas em Python.
-        """)
-    with y:
-        st.markdown('<div class="panel">', unsafe_allow_html=True)
-        st.markdown(f"**Período de coleta**  \n{periodo_inicio:%d/%m/%Y} a {periodo_fim:%d/%m/%Y}")
-        st.markdown(f"**Acionamentos da bomba**  \n{acionamentos}")
-        st.markdown(f"**Tempo total de bomba ligada**  \n{tempo_bomba:.0f} segundos")
-        st.markdown('</div>', unsafe_allow_html=True)
-    st.subheader("Variação da umidade durante a coleta")
-    fig = px.line(df, x="data_hora", y="umidade_percentual",
-                  labels={"data_hora":"Data e hora", "umidade_percentual":"Umidade do solo (%)"},
-                  color_discrete_sequence=[BLUE])
-    fig.add_hline(y=40, line_dash="dash", line_color="#D97736",
-                  annotation_text="Limite de acionamento: 40%")
-    st.plotly_chart(grafico_layout(fig, 390), use_container_width=True)
+    b.metric(
+        "Umidade média",
+        f"{media:.1f}%".replace(".", ",")
+    )
+
+    c.metric("Acionamentos da bomba", acionamentos)
+
+    d.metric("Tempo de irrigação", f"{tempo_total:.0f} s")
+
+    st.divider()
+
+    st.subheader("Evolução da umidade do solo")
+
+    fig = px.line(
+        dados,
+        x="data_hora",
+        y="umidade_percentual",
+        color_discrete_sequence=[VERDE],
+        labels={
+            "data_hora": "Data e hora",
+            "umidade_percentual": "Umidade (%)"
+        }
+    )
+
+    fig.update_traces(line=dict(width=2))
+
+    fig.add_hline(
+        y=40,
+        line_dash="dash",
+        line_color=VERMELHO,
+        annotation_text="Limite de irrigação: 40%"
+    )
+
+    fig.update_yaxes(range=[0, 105])
+
+    st.plotly_chart(
+        configurar_grafico(fig, 420),
+        use_container_width=True
+    )
+
+    esquerda, direita = st.columns(2)
+
+    with esquerda:
+
+        st.subheader("Estado da bomba")
+
+        estados = (
+            dados["estado_bomba"]
+            .value_counts()
+            .rename_axis("Estado")
+            .reset_index(name="Quantidade")
+        )
+
+        fig = px.pie(
+            estados,
+            names="Estado",
+            values="Quantidade",
+            hole=0.65,
+            color="Estado",
+            color_discrete_map={
+                "Ligada": VERDE,
+                "Desligada": "#CBD5E1"
+            }
+        )
+
+        fig.update_traces(
+            textposition="inside",
+            textinfo="percent"
+        )
+
+        st.plotly_chart(
+            configurar_grafico(fig),
+            use_container_width=True
+        )
+
+    with direita:
+
+        st.subheader("Distribuição da umidade")
+
+        fig = px.histogram(
+            dados,
+            x="umidade_percentual",
+            nbins=20,
+            color_discrete_sequence=[VERDE],
+            labels={
+                "umidade_percentual": "Umidade (%)"
+            }
+        )
+
+        fig.update_yaxes(title="Quantidade de leituras")
+
+        fig.update_layout(bargap=0.08)
+
+        st.plotly_chart(
+            configurar_grafico(fig),
+            use_container_width=True
+        )
+
+
+# PÁGINA 2 — O PROJETO
 
 elif pagina == "O projeto":
-    cabecalho("O projeto", "Integração entre hardware, programação, banco de dados e análise")
+
+    cabecalho(
+        "Sobre o projeto",
+        "Objetivos, componentes e funcionamento"
+    )
+
     st.subheader("Objetivo")
-    st.write("Desenvolver um sistema IoT funcional para monitorar a umidade do solo e automatizar a irrigação de uma horta doméstica.")
+
+    st.write(
+        "Desenvolver um sistema de monitoramento da "
+        "umidade do solo capaz de realizar a irrigação "
+        "automaticamente quando necessário."
+    )
+
+    a, b, c = st.columns(3)
+
+    a.metric("Limite de umidade", "40%")
+    b.metric("Duração da irrigação", "2 s")
+    c.metric("Investimento", "R$ 248,30")
+
     st.subheader("Componentes utilizados")
-    componentes = pd.DataFrame([
-        ["ESP32-WROOM-32", "Processa as leituras e controla a irrigação"],
-        ["Sensor capacitivo de umidade", "Mede a umidade do solo"],
-        ["Módulo relé", "Controla o acionamento da bomba"],
-        ["Mini bomba submersível 12 V", "Transporta a água até a planta"],
-        ["Leitor e cartão micro SD", "Armazenam localmente os registros em CSV"],
-        ["Reservatório, mangueira e gotejador", "Armazenam e conduzem a água"],
-        ["Protoboard, jumpers, fios e fontes", "Permitem a montagem e alimentação do circuito"],
-    ], columns=["Componente", "Função"])
-    st.dataframe(componentes, hide_index=True, use_container_width=True)
-    st.subheader("Etapas da automação")
-    st.markdown('<div class="step"><b>1. Medição</b><br>O sensor capacitivo mede a umidade do solo.</div>', unsafe_allow_html=True)
-    st.markdown('<div class="step"><b>2. Decisão</b><br>O ESP32 compara o percentual de umidade com o limite de 40%.</div>', unsafe_allow_html=True)
-    st.markdown('<div class="step"><b>3. Irrigação</b><br>Se a umidade estiver abaixo de 40%, o relé aciona a bomba por 2 segundos.</div>', unsafe_allow_html=True)
-    st.markdown('<div class="step"><b>4. Registro</b><br>O sistema registra data, hora, umidade, valor ADC e estado da bomba no cartão micro SD.</div>', unsafe_allow_html=True)
+
+    componentes = pd.DataFrame({
+        "Componente": [
+            "ESP32-WROOM-32",
+            "Sensor capacitivo de umidade",
+            "RTC DS3231",
+            "Módulo relé",
+            "Bomba submersível 12V",
+            "Módulo microSD"
+        ],
+        "Função": [
+            "Controle do sistema",
+            "Monitoramento da umidade do solo",
+            "Registro da data e hora",
+            "Acionamento da bomba",
+            "Irrigação da horta",
+            "Armazenamento dos registros"
+        ]
+    })
+
+    st.dataframe(
+        componentes,
+        hide_index=True,
+        use_container_width=True
+    )
+
+    st.subheader("Funcionamento do sistema")
+
+    a, b, c, d = st.columns(4)
+
+    with a:
+        st.markdown("### 01")
+        st.markdown("**Monitoramento**")
+        st.write("O sensor realiza a leitura do solo.")
+
+    with b:
+        st.markdown("### 02")
+        st.markdown("**Processamento**")
+        st.write("O ESP32 verifica o percentual de umidade.")
+
+    with c:
+        st.markdown("### 03")
+        st.markdown("**Irrigação**")
+        st.write("A bomba é acionada abaixo de 40%.")
+
+    with d:
+        st.markdown("### 04")
+        st.markdown("**Armazenamento**")
+        st.write("Os registros são salvos no cartão microSD.")
+
+
+# PÁGINA 3 — COLETA DE DADOS
 
 elif pagina == "Coleta de dados":
-    cabecalho("Coleta de dados", "Registros produzidos pelo protótipo durante o período de operação")
+
+    cabecalho(
+        "Coleta de dados",
+        "Acompanhamento dos registros do protótipo"
+    )
+
     a, b, c = st.columns(3)
-    a.metric("Período", f"{periodo_inicio:%d/%m} a {periodo_fim:%d/%m/%Y}")
-    b.metric("Total de registros", total)
-    c.metric("Intervalo programado", "20 minutos")
-    st.write("Cada registro contém data e hora, umidade percentual, valor bruto do ADC, tempo de bomba ligada e estado da bomba.")
-    diario = df.groupby("dia").agg(
-        leituras=("umidade_percentual", "size"),
-        umidade_media=("umidade_percentual", "mean"),
-        acionamentos=("bomba_ligada", "sum")
-    ).reset_index()
-    fig = px.bar(diario, x="dia", y="leituras",
-                 labels={"dia":"Data", "leituras":"Quantidade de leituras"},
-                 color_discrete_sequence=[CYAN])
-    st.plotly_chart(grafico_layout(fig, 350), use_container_width=True)
-    st.subheader("Amostra dos registros")
-    st.dataframe(df[["data_hora", "umidade_percentual", "valor_adc",
-                     "tempo_bomba_segundos", "estado_bomba"]].head(12),
-                 hide_index=True, use_container_width=True)
+
+    a.metric("Registros", total)
+    b.metric("Dias com registros", dados["dia"].nunique())
+    c.metric("Intervalo programado", "20 min")
+
+    st.subheader("Quantidade de leituras por dia")
+
+    diario = (
+        dados.groupby("dia")
+        .size()
+        .reset_index(name="Leituras")
+    )
+
+    fig = px.bar(
+        diario,
+        x="dia",
+        y="Leituras",
+        color_discrete_sequence=[VERDE],
+        text="Leituras",
+        labels={"dia": "Data"}
+    )
+
+    st.plotly_chart(
+        configurar_grafico(fig),
+        use_container_width=True
+    )
+
+    st.subheader("Umidade média por dia")
+
+    medias = (
+        dados.groupby("dia")["umidade_percentual"]
+        .mean()
+        .reset_index()
+    )
+
+    fig = px.bar(
+        medias,
+        x="dia",
+        y="umidade_percentual",
+        color_discrete_sequence=[VERDE],
+        labels={
+            "dia": "Data",
+            "umidade_percentual": "Umidade média (%)"
+        }
+    )
+
+    fig.update_yaxes(range=[0, 100])
+
+    st.plotly_chart(
+        configurar_grafico(fig),
+        use_container_width=True
+    )
+
+
+# PÁGINA 4 — BANCO DE DADOS
 
 elif pagina == "Banco de dados":
-    cabecalho("Banco de dados", "Armazenamento e organização dos registros no PostgreSQL")
-    st.subheader("Fluxo dos dados")
-    st.markdown('<div class="step"><b>ESP32</b> · Realiza a leitura do sensor e registra os dados.</div>', unsafe_allow_html=True)
-    st.markdown('<div class="step"><b>Cartão micro SD</b> · Armazena as leituras em arquivo CSV.</div>', unsafe_allow_html=True)
-    st.markdown('<div class="step"><b>DBeaver</b> · Realiza a importação do arquivo para o banco.</div>', unsafe_allow_html=True)
-    st.markdown('<div class="step"><b>PostgreSQL</b> · Armazena os registros na tabela <code>public.base_hortinha</code>.</div>', unsafe_allow_html=True)
-    st.markdown('<div class="step"><b>Python e Pandas</b> · Permitem preparar e analisar os dados.</div>', unsafe_allow_html=True)
-    st.subheader("Estrutura da tabela")
-    estrutura = pd.DataFrame([
-        ["data_hora", "Data e horário em que a leitura foi realizada"],
-        ["umidade_percentual", "Percentual de umidade estimado pelo sensor"],
-        ["valor_adc", "Valor bruto da conversão analógico-digital"],
-        ["tempo_bomba_segundos", "Tempo de acionamento da bomba, em segundos"],
-        ["estado_bomba", "Estado da bomba: Ligada ou Desligada"],
-    ], columns=["Campo", "Conteúdo"])
-    st.dataframe(estrutura, hide_index=True, use_container_width=True)
-    st.markdown("**Banco:** PostgreSQL · **Tabela:** `public.base_hortinha` · **Ambiente:** servidor do IESB")
-    st.caption("Os arquivos CSV foram importados para o banco após a coleta.")
+
+    cabecalho(
+        "Banco de dados",
+        "Estrutura e registros armazenados no PostgreSQL"
+    )
+
+    st.write(
+        "Os dados coletados pelo protótipo foram "
+        "armazenados em CSV e posteriormente "
+        "importados para o PostgreSQL pelo DBeaver."
+    )
+
+    st.subheader("Estrutura da tabela base_hortinha")
+
+    estrutura = pd.DataFrame({
+        "Campo": [
+            "data_hora",
+            "umidade_percentual",
+            "valor_adc",
+            "tempo_bomba_segundos",
+            "estado_bomba"
+        ],
+        "Descrição": [
+            "Data e hora da leitura",
+            "Percentual de umidade do solo",
+            "Valor registrado pelo ADC",
+            "Tempo de acionamento da bomba",
+            "Estado da bomba"
+        ]
+    })
+
+    st.dataframe(
+        estrutura,
+        hide_index=True,
+        use_container_width=True
+    )
+
+    st.subheader("Consultas SQL")
+
+    st.code(
+        "SELECT * FROM public.base_hortinha LIMIT 15;",
+        language="sql"
+    )
+
+    st.code(
+        "SELECT COUNT(*) AS total_registros "
+        "FROM public.base_hortinha;",
+        language="sql"
+    )
+
+    st.subheader("Registros coletados")
+
+    estado = st.selectbox(
+        "Filtrar estado da bomba",
+        ["Todos", "Ligada", "Desligada"]
+    )
+
+    tabela = dados.copy()
+
+    if estado != "Todos":
+        tabela = tabela[tabela["estado_bomba"] == estado]
+
+    tabela = tabela.drop(columns=["dia"])
+
+    st.dataframe(
+        tabela,
+        hide_index=True,
+        use_container_width=True
+    )
+
+    st.download_button(
+        "Baixar dados em CSV",
+        data=tabela.to_csv(
+            index=False,
+            sep=";",
+            decimal=","
+        ).encode("utf-8-sig"),
+        file_name="hortasense_dados.csv",
+        mime="text/csv"
+    )
+
+
+# PÁGINA 5 — ANÁLISE DOS RESULTADOS
 
 elif pagina == "Análise dos resultados":
-    cabecalho("Análise dos resultados", "Exploração estatística e visual dos dados coletados")
+
+    cabecalho(
+        "Análise dos resultados",
+        "Estatísticas e comportamento da irrigação"
+    )
+
     a, b, c, d = st.columns(4)
-    a.metric("Umidade média", f"{media:.1f}%".replace(".", ","))
-    b.metric("Mediana", f"{mediana:.1f}%".replace(".", ","))
+
+    a.metric("Umidade média", f"{media:.1f}%")
+    b.metric("Mediana", f"{mediana:.1f}%")
     c.metric("Acionamentos", acionamentos)
-    d.metric("Tempo de bomba ligada", f"{tempo_bomba:.0f} s")
-    st.subheader("Distribuição da umidade")
-    fig = px.histogram(df, x="umidade_percentual", nbins=20,
-                       labels={"umidade_percentual":"Umidade do solo (%)"},
-                       color_discrete_sequence=[BLUE])
-    st.plotly_chart(grafico_layout(fig, 330), use_container_width=True)
-    st.subheader("Acionamentos por dia")
-    diario = df.groupby("dia").agg(acionamentos=("bomba_ligada", "sum")).reset_index()
-    fig = px.bar(diario, x="dia", y="acionamentos",
-                 labels={"dia":"Data", "acionamentos":"Acionamentos"},
-                 color_discrete_sequence=[CYAN])
-    st.plotly_chart(grafico_layout(fig, 330), use_container_width=True)
-    st.subheader("Relação entre valor ADC e umidade")
-    fig = px.scatter(df, x="valor_adc", y="umidade_percentual",
-                     labels={"valor_adc":"Valor ADC", "umidade_percentual":"Umidade (%)"},
-                     opacity=.65, color_discrete_sequence=[BLUE])
-    st.plotly_chart(grafico_layout(fig, 350), use_container_width=True)
-    st.metric("Correlação entre ADC e umidade", f"{correlacao:.3f}".replace(".", ","))
-    st.write("A correlação negativa acompanha a calibração do sensor: valores maiores de ADC representam solo mais seco.")
-    st.subheader("Resumo diário")
-    resumo = df.groupby("dia").agg(
-        leituras=("umidade_percentual", "size"),
-        umidade_media=("umidade_percentual", "mean"),
-        umidade_minima=("umidade_percentual", "min"),
-        umidade_maxima=("umidade_percentual", "max"),
-        acionamentos=("bomba_ligada", "sum")
-    ).reset_index()
-    for col in ["umidade_media", "umidade_minima", "umidade_maxima"]:
-        resumo[col] = resumo[col].round(1)
-    st.dataframe(resumo, hide_index=True, use_container_width=True)
-    st.markdown("**Resultado dos ciclos:** 26 ciclos de irrigação, 72 acionamentos de 2 segundos e ganho médio de 11,2 pontos percentuais de umidade por ciclo.")
+
+    d.metric(
+        "Correlação ADC",
+        f"{correlacao:.3f}" if pd.notna(correlacao) else "N/D"
+    )
+
+    st.subheader("Relação entre ADC e umidade")
+
+    fig = px.scatter(
+        dados,
+        x="valor_adc",
+        y="umidade_percentual",
+        color_discrete_sequence=[VERDE],
+        labels={
+            "valor_adc": "Valor ADC",
+            "umidade_percentual": "Umidade (%)"
+        }
+    )
+
+    st.plotly_chart(
+        configurar_grafico(fig),
+        use_container_width=True
+    )
+
+    st.caption(
+        "Quanto maior o valor ADC, menor a umidade indicada."
+    )
+
+    st.subheader("Acionamentos da bomba por dia")
+
+    bomba = dados.assign(
+        acionamento=dados["estado_bomba"].eq("Ligada")
+    )
+
+    bomba = (
+        bomba.groupby("dia")["acionamento"]
+        .sum()
+        .reset_index()
+    )
+
+    fig = px.bar(
+        bomba,
+        x="dia",
+        y="acionamento",
+        text="acionamento",
+        color_discrete_sequence=[VERDE],
+        labels={
+            "dia": "Data",
+            "acionamento": "Acionamentos"
+        }
+    )
+
+    st.plotly_chart(
+        configurar_grafico(fig),
+        use_container_width=True
+    )
+
+    st.subheader("Umidade por estado da bomba")
+
+    fig = px.box(
+        dados,
+        x="estado_bomba",
+        y="umidade_percentual",
+        color="estado_bomba",
+        color_discrete_map={
+            "Ligada": VERDE,
+            "Desligada": CINZA
+        },
+        labels={
+            "estado_bomba": "Estado da bomba",
+            "umidade_percentual": "Umidade (%)"
+        }
+    )
+
+    fig.add_hline(
+        y=40,
+        line_dash="dash",
+        line_color=VERMELHO
+    )
+
+    st.plotly_chart(
+        configurar_grafico(fig),
+        use_container_width=True
+    )
+
+
+# PÁGINA 6 — CONCLUSÕES
 
 elif pagina == "Conclusões":
-    cabecalho("Conclusões", "Resultados alcançados e possibilidades de evolução")
-    st.markdown("""
-    O protótipo cumpriu sua finalidade de monitorar a umidade do solo e automatizar a irrigação
-    com base no limite de 40%. Durante o período analisado, foram identificados 26 ciclos de
-    irrigação, com ganho médio de 11,2 pontos percentuais de umidade por ciclo.
-    """)
-    st.subheader("Principais resultados")
-    a, b, c = st.columns(3)
-    a.metric("Registros analisados", total)
-    b.metric("Ciclos de irrigação", "26")
-    c.metric("Investimento", "R$ 248,30")
-    st.subheader("Limitações identificadas")
-    st.markdown("""
-    - Utilização de apenas um ponto de medição de umidade.
-    - Ausência de sensores de temperatura, umidade do ar e luminosidade.
-    - Lacunas na coleta e interrupção nos três últimos dias.
-    - Ausência de grupo de controle para quantificar a economia de água.
-    - Importação dos dados por arquivo, sem envio ao banco em tempo real.
-    """)
-    st.subheader("Trabalhos futuros")
-    st.markdown("""
-    - Incluir sensores de temperatura e umidade do ar (DHT11) e luminosidade (LDR).
-    - Ampliar os pontos de medição da horta.
-    - Implementar uma API REST para registrar as leituras diretamente no PostgreSQL.
-    - Comparar o consumo de água com a irrigação manual.
-    """)
-    st.markdown("**Investimento realizado:** R$ 248,30")
 
-st.markdown("---")
-st.caption("HortaSense · Projeto Integrador Aplicado em Ciência de Dados e Inteligência Artificial II · IESB · 2026")
+    cabecalho(
+        "Conclusões",
+        "Resultados alcançados e melhorias futuras"
+    )
+
+    st.subheader("Resultados alcançados")
+
+    st.markdown("""
+    - Monitoramento automatizado da umidade do solo.
+    - Acionamento da irrigação conforme a umidade registrada.
+    - Armazenamento dos dados coletados.
+    - Organização dos registros no PostgreSQL.
+    - Desenvolvimento de um dashboard interativo.
+    """)
+
+    st.subheader("Limitações")
+
+    st.markdown("""
+    - Interrupções durante o período de coleta.
+    - Utilização de apenas um sensor de umidade.
+    - Ausência de monitoramento em tempo real.
+    - Ausência de comparação com a irrigação manual.
+    """)
+
+    st.subheader("Melhorias futuras")
+
+    st.markdown("""
+    - Inclusão de sensores de temperatura e luminosidade.
+    - Implementação da comunicação por API.
+    - Monitoramento em tempo real.
+    - Ampliação da quantidade de sensores.
+    - Avaliação do consumo de água.
+    """)
+
+    st.success(
+        "O projeto demonstrou a aplicação da Internet "
+        "das Coisas e da Ciência de Dados no "
+        "monitoramento de uma horta doméstica."
+    )
+
+
+# Rodapé
+
+st.divider()
+
+st.caption(
+    "HortaSense | Projeto Integrador HMDC680 | "
+    "Ciência de Dados e Inteligência Artificial | IESB 2026"
+)
